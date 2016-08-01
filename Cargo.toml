@@ -1,0 +1,12 @@
+[package]
+
+name = "relativistic-jets"
+version = "0.1.0"
+authors = [
+    "Johnny Knight",
+]
+
+[[bin]]
+name = "relativisticjets"
+
+[dependencies]
