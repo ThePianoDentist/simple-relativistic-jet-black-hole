@@ -89,24 +89,31 @@ fn main(){
 	let freq_peak = ((2. * d_1 * no * (B.powf(1.5 + alpha)) * R)/((PI / 2.).sin() * 1.)).powf(2./(5.+2.*alpha)); //the 1 is optical depth at v(ssa)
 
 	fn bin_it(tuples: Vec<(f64, f64)>, min_bin: f64, max_bin: f64, step: f64) -> Vec<(f64, f64)>{
-		let binned_results = vec!();
-		let current_bin = min_bin - step;
+		println!("{}  max bin", max_bin);
+		let mut binned_results = vec!();
+		let mut current_bin = min_bin - step;
 		for (freq, flux) in tuples{
+			//println!("{}, {}", freq, current_bin);
 			match freq{
 				f if f >= max_bin => {
+					println!("breaking");
 						break
 				},
 				f if f >= current_bin + step => { // assuming cannot jump multiple bins
-					while f >= current_bin + step{
+					println!("new bin");
+					while f < current_bin + step{
 						current_bin += step
 					};
 					binned_results.push((current_bin + step / 2., flux))
 				},
 				_ => {
-					binned_results.iter_mut().filter(|&x| x.0 == current_bin + step / 2.).
-					map(|x| x.1 += flux) //unsafe if cant find
+					println!("add to bin");
+					let mut bin = binned_results.iter().find(|&&x| x.0 == current_bin + step / 2.).unwrap();
+					//println!(" flux {:?}", bin.1)
+					bin = &(bin.0, bin.1 + flux) //unsafe if cant find
 				}
 			}
+			//println!("binned res {:?}", binned_results);
 		}
 		binned_results
 	};
@@ -116,12 +123,15 @@ fn main(){
 		(tuples.iter().map(|x| x.0).collect::<Vec<f64>>(),
 		 tuples.iter().map(|x| x.1 * x.0).collect::<Vec<f64>>())
 	};
-	let (frequencies, fluxes) = result_tuple(flux_synchrotron);
+	let binned_results = bin_it(flux_synchrotron, v_b, v_max, v_step);
+	let (frequencies, fluxes) = result_tuple(binned_results);
 	//let y = [3u32, 4, 5];
 	let mut fg = Figure::new();
 	fg.axes2d()
 	.lines(&frequencies, &fluxes, &[Caption("A line"), Color("black")]);
 	fg.show();
+
+
 	/*peak=int(round((N.log10(vpeak)-logvmin)/vstep))
 	kssa=js[peak]/(vpeak**(5./2.))
 	for ip in range (peak):
