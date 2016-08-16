@@ -1,4 +1,12 @@
 [root]
 name = "relativistic-jets"
 version = "0.1.0"
+dependencies = [
+ "gnuplot 0.0.21 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "gnuplot"
+version = "0.0.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 

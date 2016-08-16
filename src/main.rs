@@ -1,4 +1,6 @@
 //use std::f32;
+extern crate gnuplot;
+use gnuplot::{Figure, Caption, Color};
 use std::f64::consts::PI as PI;
 const SIGMA_T: f64 = 6.65e-25; // cm ^2
 const STEF_BOLTZ: f64 = 5.6704e-5;
@@ -14,7 +16,8 @@ fn main(){
 	println!("yolo world");
 	let B: f64 = 1.8; // Gauss
 	let v_b = 2.8e6 * B;
-	let v_max: f64 = 10.0e30;
+	let v_max: f64 = 1.0e14;
+	let v_step: f64 = 0.1;
 	let dl: f64 = 2230.0 * 3.08568e24;
 	let z: f64 = 0.409; //redshift
 	let freq_blr: f64 = 2.47e15;
@@ -52,7 +55,7 @@ fn main(){
 	let uB = B.powf(2.0)/(8. * PI);
 
 	let num_bins: usize = (gamma_max - gamma_min / gamma_step).round() as usize;
-	let v_step: f64 = (v_max - v_b / num_bins as f64)
+	let v_step: f64 = (v_max - v_b / num_bins as f64);
 	//MAKE SYNCHROTRON SPECTRUM
 	let mut emissivity_synchrotron = vec![(0.0, 0.0); num_bins as usize]; // needs to be vector
 	let mut emissivity_compton = vec![(0.0, 0.0); num_bins as usize]; // num_bins not known compile time
@@ -71,21 +74,54 @@ fn main(){
 		let gamma_val = gamma_value(bin, gamma_min, gamma_max, num_bins);
 	    let k = SIGMA_T * c * uB /(6. * PI * v_b);
 	    let freq_synchrotron = gamma_val.powf(2.0) * v_b; //need to make sure is cloning gamma_val
-	    emissivity_synchrotron[bin] = k * gamma_val * n_gamma(gamma_val,
-			no, n1, n2, gamma_val, gamma_break);
+	    emissivity_synchrotron[bin] = (freq_synchrotron, k * gamma_val * n_gamma(gamma_val,
+			no, n1, n2, gamma_val, gamma_break));
 	}
 
-	let emiss_to_flux = |x: Vec<f64>| {x.iter().map(|y| y * 4. * PI * R.powf(3.) / (3. * dl.powf(2.)));
+	let emiss_to_flux = |x: Vec<(f64, f64)>| {x.iter().map(|y| y.1 * 4. * PI * R.powf(3.) / (3. * dl.powf(2.)));
 		x
 	};
 
 	//println!("{:?}", emissivity_synchrotron);
 	let flux_synchrotron = emiss_to_flux(emissivity_synchrotron);
-	println!("{:?}", flux_synchrotron);
+	//println!("{:?}", flux_synchrotron);
 	//SSA CUT_OFF
 	let freq_peak = ((2. * d_1 * no * (B.powf(1.5 + alpha)) * R)/((PI / 2.).sin() * 1.)).powf(2./(5.+2.*alpha)); //the 1 is optical depth at v(ssa)
 
+	fn bin_it(tuples: Vec<(f64, f64)>, min_bin: f64, max_bin: f64, step: f64) -> Vec<(f64, f64)>{
+		let binned_results = vec!();
+		let current_bin = min_bin - step;
+		for (freq, flux) in tuples{
+			match freq{
+				f if f >= max_bin => {
+						break
+				},
+				f if f >= current_bin + step => { // assuming cannot jump multiple bins
+					while f >= current_bin + step{
+						current_bin += step
+					};
+					binned_results.push((current_bin + step / 2., flux))
+				},
+				_ => {
+					binned_results.iter_mut().filter(|&x| x.0 == current_bin + step / 2.).
+					map(|x| x.1 += flux) //unsafe if cant find
+				}
+			}
+		}
+		binned_results
+	};
 
+	// x: log frequency, y: log frequency * log flux
+	let result_tuple = |tuples: Vec<(f64, f64)>| -> (Vec<f64>, Vec<f64>){
+		(tuples.iter().map(|x| x.0).collect::<Vec<f64>>(),
+		 tuples.iter().map(|x| x.1 * x.0).collect::<Vec<f64>>())
+	};
+	let (frequencies, fluxes) = result_tuple(flux_synchrotron);
+	//let y = [3u32, 4, 5];
+	let mut fg = Figure::new();
+	fg.axes2d()
+	.lines(&frequencies, &fluxes, &[Caption("A line"), Color("black")]);
+	fg.show();
 	/*peak=int(round((N.log10(vpeak)-logvmin)/vstep))
 	kssa=js[peak]/(vpeak**(5./2.))
 	for ip in range (peak):
