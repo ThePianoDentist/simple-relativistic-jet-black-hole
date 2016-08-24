@@ -18,7 +18,7 @@ fn main(){
 	let B: f64 = 1.8; // Gauss
 	let v_b = 2.8e6 * B;
 	let v_max: f64 = 1.0e18;
-	let v_step: f64 = 0.1;
+	let v_step: f64 = 1.0;
 	let dl: f64 = 2230.0 * 3.08568e24;
 	let z: f64 = 0.409; //redshift
 	let freq_blr: f64 = 2.47e15;
@@ -86,7 +86,7 @@ fn main(){
 	};
 
 	//println!("{:?}", emissivity_synchrotron);
-	let flux_synchrotron = emiss_to_flux(emissivity_synchrotron);
+	//let flux_synchrotron = emiss_to_flux(emissivity_synchrotron.clone());
 	//println!("{:?}", flux_synchrotron);
 	//SSA CUT_OFF
 	let freq_peak = ((2. * d_1 * no * (B.powf(1.5 + alpha)) * R)/((PI / 2.).sin() * 1.)).
@@ -116,12 +116,12 @@ fn main(){
 						break
 				},
 				f if f >= current_bin + step => { // - or +??????/
-					println!("new bin");
+					//println!("new bin");
 					current_bin = f - (f % step);
 					binned_results.push((current_bin + (step / 2.), flux))
 				},
 				_ => {
-					println!("add to bin");
+					//println!("add to bin");
 					let (last_bin_freq, last_bin_flux) = binned_results.pop().unwrap();
 					let new_bin_flux = last_bin_flux + flux / 2.;
 					binned_results.push((last_bin_freq, new_bin_flux));
@@ -146,11 +146,27 @@ fn main(){
 		 tuples.iter().map(|x| x.1 * x.0).collect::<Vec<f64>>())
 	};
 	//println!("{:?}", flux_synchrotron);
-	let binned_results = bin_it(rel_boost(cut_off_freq(flux_synchrotron, freq_peak),
-	 	doppler_factor, alpha),
+	let binned_sync_emiss = bin_it(cut_off_freq(emissivity_synchrotron, freq_peak),
 	 	v_b, v_max, v_step);
+	let flux_sync = rel_boost(emiss_to_flux(binned_sync_emiss.clone()), doppler_factor, alpha);
+
+	//MAKE INVERSE COMPTON SPECTRUMx`
+	for (sync_freq, sync_emiss) in binned_sync_emiss{
+	    let internal_energy_sync = sync_emiss * 4. * PI * R / (3. * c);
+		for bin in 0..num_bins{
+			let gamma_val = gamma_value(bin, gamma_min, gamma_max, num_bins);
+			let comp_freq = (sync_freq * gamma_val).powf(2.0);
+			// which freq?
+	        if comp_freq <= (gamma_val * c.powf(2.0) * MASS_ELECTRON / PLANCK_CONST){
+	            let comp_emiss = SIGMA_T * c * internal_energy_sync * gamma_val
+					* n_gamma(gamma_val, no, n1, n2, gamma_val, gamma_break) * v_step
+					/ (6.0 * PI * sync_freq);
+				emissivity_compton.push((comp_freq, comp_emiss));
+			}
+		}
+	}
 	//println!("{:?}", binned_results);
-	let (frequencies, fluxes) = result_tuple(binned_results);
+	let (frequencies, fluxes) = result_tuple(flux_sync);
 	//let y = [3u32, 4, 5];
 	let mut fg = Figure::new();
 	fg.axes2d()
