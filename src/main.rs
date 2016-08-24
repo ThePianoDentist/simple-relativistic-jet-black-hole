@@ -7,16 +7,17 @@ const STEF_BOLTZ: f64 = 5.6704e-5;
 const c: f64 = 3e10; //cm s^-1????
 const BOLTZ_CONST: f64 = 1.3806504e-16; //erg/K
 const PLANCK_CONST: f64 = 6.63e-27; //ergs
-const MASS_ELECTRON : f64= 9.109e-28; //g
+const MASS_ELECTRON : f64 = 9.109e-28; //g
 //alpha=1.
 //d_1=2.32e14
 //theta=N.pi/2.
 
+#[allow(non_snake_case)]
 fn main(){
 	println!("yolo world");
 	let B: f64 = 1.8; // Gauss
 	let v_b = 2.8e6 * B;
-	let v_max: f64 = 1.0e14;
+	let v_max: f64 = 1.0e18;
 	let v_step: f64 = 0.1;
 	let dl: f64 = 2230.0 * 3.08568e24;
 	let z: f64 = 0.409; //redshift
@@ -41,7 +42,8 @@ fn main(){
 
 	//loggammastep=0.01 #0.01
 	let beta_factor = (1. - (1./bulk_lorentz.powf(2.0))).sqrt(); //N.sqrt(1.-(1./(bulk_lorentz**2.)))
-	let doppler_factor = 1./(bulk_lorentz * (1. - beta_factor * (3. * PI).cos()));
+	let doppler_factor = 1./(bulk_lorentz * (1. - beta_factor * (3. * PI / 180.).cos()));
+	println!("doppler fac {}", doppler_factor);
 	let fBLR: f64 = 0.1;
 	let Rblr = 1.0e17 * (Ld/1.0e45).sqrt();
 	let optical_depth = SIGMA_T * R * no;
@@ -55,7 +57,7 @@ fn main(){
 	let uB = B.powf(2.0)/(8. * PI);
 
 	let num_bins: usize = (gamma_max - gamma_min / gamma_step).round() as usize;
-	let v_step: f64 = (v_max - v_b / num_bins as f64);
+	//let v_step: f64 = (v_max - v_b / num_bins as f64);
 	//MAKE SYNCHROTRON SPECTRUM
 	let mut emissivity_synchrotron = vec![(0.0, 0.0); num_bins as usize]; // needs to be vector
 	let mut emissivity_compton = vec![(0.0, 0.0); num_bins as usize]; // num_bins not known compile time
@@ -78,64 +80,81 @@ fn main(){
 			no, n1, n2, gamma_val, gamma_break));
 	}
 
-	let emiss_to_flux = |x: Vec<(f64, f64)>| {x.iter().map(|y| y.1 * 4. * PI * R.powf(3.) / (3. * dl.powf(2.)));
-		x
+	let emiss_to_flux = |x: Vec<(f64, f64)>| {
+		x.iter().map(|y| (y.0, y.1 * 4. * PI * R.powf(3.) / (3. * dl.powf(2.)))).
+		collect::<Vec<(f64, f64)>>()
 	};
 
 	//println!("{:?}", emissivity_synchrotron);
 	let flux_synchrotron = emiss_to_flux(emissivity_synchrotron);
 	//println!("{:?}", flux_synchrotron);
 	//SSA CUT_OFF
-	let freq_peak = ((2. * d_1 * no * (B.powf(1.5 + alpha)) * R)/((PI / 2.).sin() * 1.)).powf(2./(5.+2.*alpha)); //the 1 is optical depth at v(ssa)
+	let freq_peak = ((2. * d_1 * no * (B.powf(1.5 + alpha)) * R)/((PI / 2.).sin() * 1.)).
+		powf(2./(5.+2.*alpha)); //the 1 is optical depth at v(ssa)
+
+	fn cut_off_freq(tuples: Vec<(f64, f64)>, cut_off: f64) -> Vec<(f64, f64)>{
+		let mut new_vec = vec!();
+		for (freq, flux) in tuples{
+			if freq > cut_off{
+				new_vec.push((freq, flux));
+			}
+			else{
+				new_vec.push((freq, 0.0));
+			}
+		}
+		new_vec
+	}
 
 	fn bin_it(tuples: Vec<(f64, f64)>, min_bin: f64, max_bin: f64, step: f64) -> Vec<(f64, f64)>{
-		println!("{}  max bin", max_bin);
 		let mut binned_results = vec!();
-		let mut current_bin = min_bin - step;
+		let mut current_bin = 0.0;
+		//let mut current_bin_max = step;
 		for (freq, flux) in tuples{
-			//println!("{}, {}", freq, current_bin);
 			match freq{
 				f if f >= max_bin => {
 					println!("breaking");
 						break
 				},
-				f if f >= current_bin + step => { // assuming cannot jump multiple bins
+				f if f >= current_bin + step => { // - or +??????/
 					println!("new bin");
-					while f < current_bin + step{
-						current_bin += step
-					};
-					binned_results.push((current_bin + step / 2., flux))
+					current_bin = f - (f % step);
+					binned_results.push((current_bin + (step / 2.), flux))
 				},
 				_ => {
 					println!("add to bin");
-					let mut bin = binned_results.iter().find(|&&x| x.0 == current_bin + step / 2.).unwrap();
-					//println!(" flux {:?}", bin.1)
-					bin = &(bin.0, bin.1 + flux) //unsafe if cant find
+					let (last_bin_freq, last_bin_flux) = binned_results.pop().unwrap();
+					let new_bin_flux = last_bin_flux + flux / 2.;
+					binned_results.push((last_bin_freq, new_bin_flux));
 				}
 			}
-			//println!("binned res {:?}", binned_results);
 		}
 		binned_results
-	};
+	}
 
+	fn rel_boost(tuples: Vec<(f64, f64)>, doppler_factor: f64, alpha: f64) -> Vec<(f64, f64)>{
+		tuples.iter().map(|x| (x.0 * doppler_factor, x.1 * doppler_factor.powf(3.0 + alpha))).
+			collect::<Vec<(f64, f64)>>()
+			// the frequency gets boosted as well right?
+	}
+
+	let log10_vec = |vec_in: Vec<f64>| -> Vec<f64>{
+		vec_in.iter().map(|x| x.log(10.0)).collect::<Vec<f64>>()
+	};
 	// x: log frequency, y: log frequency * log flux
 	let result_tuple = |tuples: Vec<(f64, f64)>| -> (Vec<f64>, Vec<f64>){
 		(tuples.iter().map(|x| x.0).collect::<Vec<f64>>(),
 		 tuples.iter().map(|x| x.1 * x.0).collect::<Vec<f64>>())
 	};
-	let binned_results = bin_it(flux_synchrotron, v_b, v_max, v_step);
+	//println!("{:?}", flux_synchrotron);
+	let binned_results = bin_it(rel_boost(cut_off_freq(flux_synchrotron, freq_peak),
+	 	doppler_factor, alpha),
+	 	v_b, v_max, v_step);
+	//println!("{:?}", binned_results);
 	let (frequencies, fluxes) = result_tuple(binned_results);
 	//let y = [3u32, 4, 5];
 	let mut fg = Figure::new();
 	fg.axes2d()
-	.lines(&frequencies, &fluxes, &[Caption("A line"), Color("black")]);
+	.lines(&log10_vec(frequencies), &log10_vec(fluxes),
+	 &[Caption("A line"), Color("black")]);
 	fg.show();
-
-
-	/*peak=int(round((N.log10(vpeak)-logvmin)/vstep))
-	kssa=js[peak]/(vpeak**(5./2.))
-	for ip in range (peak):
-	    js[ip]=0.
-	    #js[ip]=kssa*(freq[ip]**(5./2.))
-	*/
 }
