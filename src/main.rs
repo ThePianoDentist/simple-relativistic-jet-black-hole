@@ -12,13 +12,35 @@ const MASS_ELECTRON : f64 = 9.109e-28; //g
 //d_1=2.32e14
 //theta=N.pi/2.
 
+trait RelBoost{
+	fn rel_boost(&mut self, doppler_factor: f64, alpha: f64) -> Vec<(f64, f64)>;
+}
+
+impl RelBoost for Vec<(f64, f64)>{
+	fn rel_boost(&mut self, doppler_factor: f64, alpha: f64) -> Vec<(f64, f64)>{
+		self.iter().map(|x| (x.0 * doppler_factor, x.1 * doppler_factor.powf(3.0 + alpha))).
+			collect::<Vec<(f64, f64)>>()
+	}
+}
+
+trait EmissToFlux{
+	fn emiss_to_flux(&mut self, f64, f64) -> Vec<(f64, f64)>;
+}
+
+impl EmissToFlux for Vec<(f64, f64)>{
+	fn emiss_to_flux(&mut self, R: f64, dl: f64) -> Vec<(f64, f64)>{
+		self.iter().map(|y| (y.0, y.1 * 4. * PI * R.powf(3.) / (3. * dl.powf(2.)))).
+		collect::<Vec<(f64, f64)>>()
+	}
+};
+
 #[allow(non_snake_case)]
 fn main(){
 	println!("yolo world");
 	let B: f64 = 1.8; // Gauss
 	let v_b = 2.8e6 * B;
 	let v_max: f64 = 1.0e18;
-	let v_step: f64 = 1.0;
+	let v_step: f64 = 1000.0;
 	let dl: f64 = 2230.0 * 3.08568e24;
 	let z: f64 = 0.409; //redshift
 	let freq_blr: f64 = 2.47e15;
@@ -38,7 +60,7 @@ fn main(){
 	let R_diss: f64 = 3.0e16;
 	let theta2 = 3. * PI; //3.*N.pi/180.;
 	let gamma_min: f64 = 1.;
-	let gamma_step: f64 = 0.1;
+	let gamma_step: f64 = 100.0;
 
 	//loggammastep=0.01 #0.01
 	let beta_factor = (1. - (1./bulk_lorentz.powf(2.0))).sqrt(); //N.sqrt(1.-(1./(bulk_lorentz**2.)))
@@ -52,11 +74,12 @@ fn main(){
 	//logblrvmin = N.log10(vblr)
 	//logvcompmax=30. #N.log10(vb)+4*loggammamax#26.41
 	//vmax=10**(logvcompmax)
-	let freq_step: f64 = 0.1;
+	//let freq_step: f64 = 0.1;
 	//Radiation Energy Densities
 	let uB = B.powf(2.0)/(8. * PI);
 
-	let num_bins: usize = (gamma_max - gamma_min / gamma_step).round() as usize;
+	let num_bins: usize = ((gamma_max - gamma_min) / gamma_step).round() as usize;
+	println!("numbins {}", num_bins);
 	//let v_step: f64 = (v_max - v_b / num_bins as f64);
 	//MAKE SYNCHROTRON SPECTRUM
 	let mut emissivity_synchrotron = vec![(0.0, 0.0); num_bins as usize]; // needs to be vector
@@ -80,14 +103,11 @@ fn main(){
 			no, n1, n2, gamma_val, gamma_break));
 	}
 
-	let emiss_to_flux = |x: Vec<(f64, f64)>| {
+	/*let emiss_to_flux = |x: Vec<(f64, f64)>| {
 		x.iter().map(|y| (y.0, y.1 * 4. * PI * R.powf(3.) / (3. * dl.powf(2.)))).
 		collect::<Vec<(f64, f64)>>()
-	};
+	};*/
 
-	//println!("{:?}", emissivity_synchrotron);
-	//let flux_synchrotron = emiss_to_flux(emissivity_synchrotron.clone());
-	//println!("{:?}", flux_synchrotron);
 	//SSA CUT_OFF
 	let freq_peak = ((2. * d_1 * no * (B.powf(1.5 + alpha)) * R)/((PI / 2.).sin() * 1.)).
 		powf(2./(5.+2.*alpha)); //the 1 is optical depth at v(ssa)
@@ -151,11 +171,13 @@ fn main(){
 	let flux_sync = rel_boost(emiss_to_flux(binned_sync_emiss.clone()), doppler_factor, alpha);
 
 	//MAKE INVERSE COMPTON SPECTRUMx`
+	//let comp_emiss = binned_sync_emiss.map(|x| (x.0 * gamma_val.powf(2.0),))
 	for (sync_freq, sync_emiss) in binned_sync_emiss{
+		//println!("{} {}", sync_freq, sync_emiss);
 	    let internal_energy_sync = sync_emiss * 4. * PI * R / (3. * c);
 		for bin in 0..num_bins{
 			let gamma_val = gamma_value(bin, gamma_min, gamma_max, num_bins);
-			let comp_freq = (sync_freq * gamma_val).powf(2.0);
+			let comp_freq = sync_freq * gamma_val.powf(2.0);
 			// which freq?
 	        if comp_freq <= (gamma_val * c.powf(2.0) * MASS_ELECTRON / PLANCK_CONST){
 	            let comp_emiss = SIGMA_T * c * internal_energy_sync * gamma_val
